@@ -19,3 +19,4 @@ logs/
 
 # captured fixtures larger than what we commit intentionally
 /tmp/
+/.claude
