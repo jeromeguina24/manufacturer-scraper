@@ -1,0 +1,101 @@
+[
+ {
+  "id": 17430,
+  "date": "2026-07-30T09:01:51",
+  "slug": "vulnerability-in-prismaproduction-cve-2026-3245",
+  "link": "https://cpp.canon/vulnerability-in-prismaproduction-cve-2026-3245/",
+  "title": {
+   "rendered": "Vulnerability in PRISMAproduction CVE-2026-3245"
+  },
+  "excerpt": {
+   "rendered": "<p>A deserialization vulnerability has been identified in PRISMAproduction which could allow an unauthenticated attacker on an adjacent network to execute arbitrary code.</p>\n",
+   "protected": false
+  },
+  "categories": [
+   4149
+  ],
+  "featured_media": 12931,
+  "_embedded": {
+   "wp:featuredmedia": [
+    {
+     "id": 12931,
+     "source_url": "https://cpp.canon/app/uploads/2021/12/security-news.jpg"
+    }
+   ]
+  }
+ },
+ {
+  "id": 17417,
+  "date": "2026-07-16T15:25:07",
+  "slug": "canon-earns-two-2026-printing-united-alliance-pinnacle-awards-for-innovation",
+  "link": "https://cpp.canon/canon-earns-two-2026-printing-united-alliance-pinnacle-awards-for-innovation/",
+  "title": {
+   "rendered": "Canon Earns Two 2026 PRINTING United Alliance Pinnacle Awards for Innovation"
+  },
+  "excerpt": {
+   "rendered": "<p>Canon varioPRESS iV7 and imagePROGRAF GP-2600S Recognized for Excellence in Technology and Output.</p>\n",
+   "protected": false
+  },
+  "categories": [
+   125,
+   149,
+   2646
+  ],
+  "featured_media": 17422,
+  "_embedded": {
+   "wp:featuredmedia": [
+    {
+     "id": 17422,
+     "source_url": "https://cpp.canon/app/uploads/2026/07/20260713-pinnacle-awd1_1920x1080.jpg"
+    }
+   ]
+  }
+ },
+ {
+  "id": 17402,
+  "date": "2026-07-10T12:16:50",
+  "slug": "bavarian-energy-prize-2026-canon-wins-in-the-category-energy-efficiency-in-industrial-processes-and-production",
+  "link": "https://cpp.canon/bavarian-energy-prize-2026-canon-wins-in-the-category-energy-efficiency-in-industrial-processes-and-production/",
+  "title": {
+   "rendered": "Bavarian Energy Prize 2026:  Canon wins in the category Energy Efficiency in industrial processes and production"
+  },
+  "excerpt": {
+   "rendered": "<p>Bavarian Ministry of Economic Affairs honours Canon Production Printing in Poing.</p>\n",
+   "protected": false
+  },
+  "categories": [
+   3039,
+   125,
+   149,
+   4217
+  ],
+  "featured_media": 17403,
+  "_embedded": {
+   "wp:featuredmedia": [
+    {
+     "id": 17403,
+     "source_url": "https://cpp.canon/app/uploads/2026/07/2026_bavarian-energy-prize_Foto2.jpg"
+    }
+   ]
+  }
+ },
+ {
+  "id": 16210,
+  "date": "2025-05-06T10:32:40",
+  "slug": "discover-the-power-to-move-with-canons-latest-large-format-technology-developments-at-fespa-global-print-expo-2025",
+  "link": "https://cpp.canon/discover-the-power-to-move-with-canons-latest-large-format-technology-developments-at-fespa-global-print-expo-2025/",
+  "title": {
+   "rendered": "Discover ‘The Power to Move’ with Canon’s Latest Large Format Technology Developments at FESPA Global Print Expo 2025"
+  },
+  "excerpt": {
+   "rendered": "<p>Canon broadens application scope with enhanced textile handling capabilities and thicker media support, and adds productivity improvements.</p>\n",
+   "protected": false
+  },
+  "categories": [
+   125,
+   149,
+   2646
+  ],
+  "featured_media": 16122
+ }
+]

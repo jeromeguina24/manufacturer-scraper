@@ -1,0 +1,42 @@
+# manufacturer-scraper configuration (no secrets here — the token lives in .env)
+
+hubspot:
+  # Blog (content group) GUID — find it via `manufacturer-scraper setup-hubspot`
+  # or in HubSpot under Marketing -> Website -> Blog (Settings). Required before pushing.
+  blog_id: ""
+  # Blog author id — created/listed by `manufacturer-scraper setup-hubspot`. Required.
+  blog_author_id: ""
+  # Where imported images are stored in the HubSpot file manager.
+  image_folder_path: "/news-import"
+  # "PUBLISHED" (backdated to the article date) or "DRAFT" for review before going live.
+  post_state: "PUBLISHED"
+  # Categories never turned into HubSpot tags.
+  tag_exclude: []
+  # Custom properties set on each post (created best-effort by setup-hubspot).
+  custom_properties: true
+
+scraping:
+  # Browser-like UA is required by some sites (Fujifilm).
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
+  request_delay_s: 1.5      # delay between requests (jitter is added automatically)
+  timeout_s: 20
+  retries: 3
+  max_pages: 3              # default per-run page limit per source; raise for backfills
+  db_path: "scraper_state.db"
+
+sources:
+  fujifilm:
+    enabled: true
+  canon:
+    enabled: true
+    per_page: 100
+  kyocera:
+    enabled: true
+    # Only items tagged with at least one of these categories are imported.
+    include_categories:
+      - "Printers / Multifunctionals"
+      - "Printing Devices"
+    # Heuristic first-content-image fetch from article pages; fragile, off by default.
+    fetch_detail_images: false
+  konica:
+    enabled: true

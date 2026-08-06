@@ -1,0 +1,21 @@
+# secrets
+.env
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# scraper state
+*.db
+*.db-wal
+*.db-shm
+logs/
+
+# captured fixtures larger than what we commit intentionally
+/tmp/

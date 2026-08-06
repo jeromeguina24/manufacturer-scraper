@@ -1,0 +1,47 @@
+[
+ {
+  "id": 1777,
+  "name": "Fluid dynamics",
+  "count": 9
+ },
+ {
+  "id": 3039,
+  "name": "Local news",
+  "count": 7
+ },
+ {
+  "id": 125,
+  "name": "News",
+  "count": 99
+ },
+ {
+  "id": 149,
+  "name": "Press Releases",
+  "count": 67
+ },
+ {
+  "id": 2646,
+  "name": "Product news",
+  "count": 51
+ },
+ {
+  "id": 4149,
+  "name": "Security",
+  "count": 19
+ },
+ {
+  "id": 1814,
+  "name": "Sponsoring",
+  "count": 1
+ },
+ {
+  "id": 4217,
+  "name": "Sustainability",
+  "count": 3
+ },
+ {
+  "id": 1,
+  "name": "Uncategorized",
+  "count": 3
+ }
+]

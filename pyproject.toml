@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "manufacturer-scraper"
+version = "0.1.0"
+description = "Scrapes printer-manufacturer newsrooms and publishes articles to HubSpot as CMS blog posts"
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.32",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.0",
+    "python-dotenv>=1.0",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "responses>=0.25",
+    "ruff>=0.5",
+]
+
+[project.scripts]
+manufacturer-scraper = "manufacturer_scraper.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["manufacturer_scraper*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
