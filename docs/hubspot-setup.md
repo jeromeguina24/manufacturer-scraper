@@ -10,10 +10,15 @@ else the scraper can create for you.
 2. On the **Scopes** tab, grant:
    - `content` — required (blogs, posts, tags, authors)
    - `files` — required (importing article images into the file manager)
-   - `crm.schemas.blog_posts.write` — optional; needed only if you want the
-     `source_url` / `manufacturer` custom properties. The scraper degrades
-     gracefully without them (the linkback link is always embedded in the
-     post body as well).
+
+   The optional `source_url` / `manufacturer` custom properties need write
+   access to the CRM properties API, which HubSpot gates behind generic CRM
+   scopes (there is no `crm.schemas.blog_posts.*` scope to grant). A
+   content-only private app therefore can't create them — the scraper
+   degrades gracefully: the linkback link is always embedded in the post
+   body. If you still want the properties, create them manually in HubSpot
+   (**Settings → Properties → Blog Post**, both as single-line text):
+   `source_url` and `manufacturer`, then set `hubspot.custom_properties: true`.
 3. Copy the access token into `.env`:
    ```
    HUBSPOT_ACCESS_TOKEN=pat-na1-xxxx…xxxx
@@ -75,5 +80,5 @@ manufacturer's CDN), the post is published without an image.
 | `401` from the API | Token expired/revoked — regenerate in the private app settings |
 | `403` on posts | Private app is missing the `content` scope |
 | `403` on image import | Private app is missing the `files` scope |
-| Custom properties `[FAIL]` | Missing `crm.schemas.blog_posts.write` scope or plan limitation — safe to ignore, in-body linkback still works |
+| Custom properties `[FAIL]` / "NOT available" | Expected for a content-only private app — HubSpot gives such apps no way to create blog-post properties via API. Safe to ignore (in-body linkback still works); or create `source_url`/`manufacturer` manually under **Settings → Properties → Blog Post** and set `hubspot.custom_properties: true` |
 | `409` slug collision | Handled automatically (suffix `-2`, `-3`, …) |

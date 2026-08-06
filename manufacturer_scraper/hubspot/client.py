@@ -92,7 +92,20 @@ class HubSpotClient:
     # -- blogs ------------------------------------------------------------------
 
     def list_blogs(self) -> list[dict]:
-        return self._items("/cms/v3/blogs/blogs")
+        """List blogs (content groups). HubSpot serves these via the
+        blog-settings endpoint (there is no /cms/v3/blogs/blogs route)."""
+        blogs: list[dict] = []
+        after: str | None = None
+        while True:
+            params: dict[str, str | int] = {"limit": 100}
+            if after is not None:
+                params["after"] = after
+            data = self._request("GET", "/cms/v3/blog-settings/settings", params=params)
+            page = data if isinstance(data, dict) else {}
+            blogs.extend(page.get("results") or [])
+            after = (page.get("paging") or {}).get("next", {}).get("after")
+            if not after:
+                return blogs
 
     def create_blog_post(self, payload: dict) -> dict:
         return self._request("POST", "/cms/v3/blogs/posts", json=payload)  # type: ignore[return-value]
@@ -173,16 +186,16 @@ class HubSpotClient:
         self, object_type: str, name: str, label: str
     ) -> bool:
         """Create a string property if missing. Returns True when present/created."""
-        groups = self._items(f"/crm/v3/properties/{object_type}/groups")
-        group_name = groups[0]["name"] if groups else "blog_post_information"
-        payload = {
-            "groupName": group_name,
-            "name": name,
-            "label": label,
-            "type": "string",
-            "fieldType": "text",
-        }
         try:
+            groups = self._items(f"/crm/v3/properties/{object_type}/groups")
+            group_name = groups[0]["name"] if groups else "blog_post_information"
+            payload = {
+                "groupName": group_name,
+                "name": name,
+                "label": label,
+                "type": "string",
+                "fieldType": "text",
+            }
             self._request("POST", f"/crm/v3/properties/{object_type}", json=payload)
             log.info("Created custom property %s on %s", name, object_type)
             return True

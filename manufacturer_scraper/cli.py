@@ -183,7 +183,11 @@ def cmd_setup_hubspot(args: argparse.Namespace) -> int:
         else:
             print(
                 "  NOT available — linkback still works via the in-body link.\n"
-                "  (Requires crm.schemas.blog_posts.write scope / a supporting plan.)"
+                "  (HubSpot gates the blog-post property API behind CRM scopes a\n"
+                "  content-only private app can't be granted. To use them anyway,\n"
+                "  create 'source_url' and 'manufacturer' manually under\n"
+                "  Settings -> Properties -> Blog Post; otherwise set\n"
+                "  hubspot.custom_properties: false in config.yaml.)"
             )
 
     print("\nPaste into config.yaml:")

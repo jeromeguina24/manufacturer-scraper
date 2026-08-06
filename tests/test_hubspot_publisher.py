@@ -231,3 +231,47 @@ def test_non_conflict_api_error_raises_publish_error(publisher, store):
     )
     with pytest.raises(PublishError):
         publisher.publish(make_article())
+
+
+@responses.activate
+def test_list_blogs_uses_blog_settings_endpoint_and_paginates():
+    client = HubSpotClient("test-token")
+    responses.add(
+        responses.GET,
+        f"{BASE}/cms/v3/blog-settings/settings",
+        json={
+            "total": 3,
+            "results": [{"id": "1", "name": "Blog A"}, {"id": "2", "name": "Blog B"}],
+            "paging": {"next": {"after": "Mg%3D%3D"}},
+        },
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        f"{BASE}/cms/v3/blog-settings/settings",
+        json={"total": 3, "results": [{"id": "3", "name": "Blog C"}]},
+        status=200,
+    )
+
+    blogs = client.list_blogs()
+
+    assert [b["id"] for b in blogs] == ["1", "2", "3"]
+    assert "limit=100" in responses.calls[0].request.url
+    assert "after=" in responses.calls[1].request.url
+
+
+@responses.activate
+def test_ensure_custom_property_is_nonfatal_without_schema_scope():
+    client = HubSpotClient("test-token")
+    responses.add(
+        responses.GET,
+        f"{BASE}/crm/v3/properties/BLOG_POST/groups",
+        json={
+            "status": "error",
+            "message": "missing scopes",
+            "category": "MISSING_SCOPES",
+        },
+        status=403,
+    )
+
+    assert client.ensure_custom_property("BLOG_POST", "source_url", "Source URL") is False
