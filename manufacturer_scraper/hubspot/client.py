@@ -141,9 +141,10 @@ class HubSpotClient:
             "/files/v3/files/import-from-url/async",
             json={
                 "url": url,
+                "access": "PUBLIC_NOT_INDEXABLE",
                 "folderPath": folder_path,
-                "fileName": file_name,
-                "options": {"overwrite": False},
+                "name": file_name,
+                "overwrite": True,
             },
         )
         task_id = (data or {}).get("id")  # type: ignore[union-attr]

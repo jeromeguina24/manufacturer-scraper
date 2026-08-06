@@ -77,22 +77,24 @@ class HubSpotPublisher:
 
         payload: dict = {
             "name": article.title,
-            "content_group_id": hub.blog_id,
-            "blog_author_id": hub.blog_author_id,
+            "contentGroupId": hub.blog_id,
+            "blogAuthorId": hub.blog_author_id,
             "slug": slug,
             "state": hub.post_state,
-            "post_body": post_body,
-            "meta_description": truncate(summary, 300),
+            "postBody": post_body,
+            "metaDescription": truncate(summary, 300),
         }
         if article.published is not None:
-            payload["publish_date"] = article.published.isoformat()
+            payload["publishDate"] = article.published.isoformat()
         if tag_ids:
-            payload["tag_ids"] = tag_ids
+            payload["tagIds"] = tag_ids
         if image:
             file_id, _path = image
             if file_id:
-                payload["featured_image"] = file_id
-            payload["featured_image_alt_text"] = truncate(article.title, 120)
+                payload["featuredImage"] = file_id
+            payload["featuredImageAltText"] = truncate(article.title, 120)
+        else:
+            payload["useFeaturedImage"] = False
         if hub.custom_properties:
             payload["properties"] = {
                 "source_url": article.url,
