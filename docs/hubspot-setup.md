@@ -71,4 +71,3 @@ All lines should report `[OK]`.
 | `403` on HubDB calls | Portal lacks a Professional plan, or the private app is missing the `hubdb` scope |
 | "table is missing columns" | Add the listed columns in HubSpot, or delete the table and re-run `setup-hubspot` |
 | Hub page shows no rows | The table was never published, or `TABLE` in the template doesn't match `hubdb_table_name` |
-| Leftover blog posts from earlier experiments | Delete them manually: Marketing → Website → Blog |
