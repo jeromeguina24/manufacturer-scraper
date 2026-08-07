@@ -1,4 +1,4 @@
-"""Orchestration: scrape a source, dedupe, enrich, publish, report."""
+"""Orchestration: scrape a source, dedupe, enrich, sync to HubDB, report."""
 
 from __future__ import annotations
 
@@ -32,7 +32,6 @@ class SourceResult:
 def run_source(
     source: BaseSource,
     store: Store | None,
-    publisher,  # HubSpotPublisher | None
     *,
     dry_run: bool = False,
     max_pages: int | None = None,
@@ -41,9 +40,13 @@ def run_source(
 ) -> SourceResult:
     """Scrape one source.
 
+    New articles are enriched and inserted into the store with status 'new';
+    the HubDB sync happens once per run, after all sources (see cmd_run /
+    sync_articles).
+
     - dry_run: no store writes, no HubSpot calls; the first few new articles
-      are enriched so the output demonstrates what would be pushed.
-    - limit: cap on new articles processed (enrich + publish) this run.
+      are enriched so the output demonstrates what would be synced.
+    - limit: cap on new articles stored this run.
     """
     result = SourceResult(source=source.name, dry_run=dry_run)
     started = time.monotonic()
@@ -90,25 +93,26 @@ def run_source(
                 break
             continue
 
-        if limit is not None and result.pushed + result.failed >= limit:
-            break
-
         enriched = source.enrich(article)
         store.insert_new(enriched)  # type: ignore[union-attr]
-        try:
-            post_id, slug = publisher.publish(enriched)
-        except Exception as exc:  # noqa: BLE001 - one bad article must not kill the run
-            result.failed += 1
-            store.mark_failed(article.url, str(exc))  # type: ignore[union-attr]
-            log.error("FAIL %s | %s: %s", source.manufacturer, article.title, exc)
-            continue
+        log.info("NEW  %s | %s", source.manufacturer, article.title)
+        if limit is not None and result.new >= limit:
+            break
 
-        result.pushed += 1
-        store.mark_pushed(article.url, post_id, slug)  # type: ignore[union-attr]
-        log.info(
-            "PUSH %s | post %s | %s", source.manufacturer, post_id, article.title
-        )
+    result.duration_s = time.monotonic() - started
+    result.finished_at = utcnow()
+    return result
 
+
+def sync_articles(syncer, articles, *, source_label: str = "hubdb-sync") -> SourceResult:
+    """Sync a batch of articles to HubDB and report it as one summary row."""
+    result = SourceResult(source=source_label)
+    started = time.monotonic()
+    outcome = syncer.sync_articles(articles)
+    result.new = outcome.pushed + outcome.failed
+    result.pushed = outcome.pushed
+    result.failed = outcome.failed
+    result.error = outcome.error
     result.duration_s = time.monotonic() - started
     result.finished_at = utcnow()
     return result
@@ -117,33 +121,33 @@ def run_source(
 def retry_failed(
     sources_by_manufacturer: dict[str, BaseSource],
     store: Store,
-    publisher,
+    syncer,
     *,
     limit: int | None = None,
 ) -> SourceResult:
-    """Re-attempt articles with status='failed' (re-enrich + re-publish)."""
-    result = SourceResult(source="retry-failed")
-    started = time.monotonic()
-    for article in store.failed_articles():
-        result.found += 1
-        if limit is not None and result.pushed + result.failed >= limit:
-            break
+    """Re-attempt articles with status='failed' (re-enrich + re-sync)."""
+    failed = store.failed_articles()
+    if limit is not None:
+        failed = failed[:limit]
+
+    batch: list[Article] = []
+    for article in failed:
         source = sources_by_manufacturer.get(article.manufacturer)
-        enriched = source.enrich(article) if source else article
+        enriched = article
+        if source is not None:
+            try:
+                enriched = source.enrich(article)
+            except Exception as exc:  # noqa: BLE001 - retry with stale enrichment
+                log.warning(
+                    "Re-enrich failed for %s (%s); retrying with stored data",
+                    article.title,
+                    exc,
+                )
         store.update_enrichment(enriched.url, enriched.summary, enriched.image_url)
-        try:
-            post_id, slug = publisher.publish(enriched)
-        except Exception as exc:  # noqa: BLE001
-            result.failed += 1
-            store.mark_failed(article.url, str(exc))
-            log.error("FAIL retry | %s: %s", article.title, exc)
-            continue
-        result.pushed += 1
-        result.new += 1
-        store.mark_pushed(article.url, post_id, slug)
-        log.info("PUSH retry | post %s | %s", post_id, article.title)
-    result.duration_s = time.monotonic() - started
-    result.finished_at = utcnow()
+        batch.append(enriched)
+
+    result = sync_articles(syncer, batch, source_label="retry-failed")
+    result.found = len(failed)
     return result
 
 

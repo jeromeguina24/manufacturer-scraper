@@ -9,8 +9,6 @@ from pathlib import Path
 import yaml
 from dotenv import load_dotenv
 
-VALID_POST_STATES = ("PUBLISHED", "DRAFT")
-
 
 class ConfigError(RuntimeError):
     """Raised when configuration is missing or invalid."""
@@ -18,12 +16,7 @@ class ConfigError(RuntimeError):
 
 @dataclass(frozen=True)
 class HubSpotSettings:
-    blog_id: str = ""
-    blog_author_id: str = ""
-    image_folder_path: str = "/news-import"
-    post_state: str = "PUBLISHED"
-    tag_exclude: tuple[str, ...] = ()
-    custom_properties: bool = True
+    hubdb_table_name: str = "manufacturer_news"
     access_token: str | None = None
 
 
@@ -78,18 +71,8 @@ def load_settings(
             load_dotenv(dotenv_path=env_file, override=False)
 
     hub_raw = raw.get("hubspot") or {}
-    post_state = str(hub_raw.get("post_state", "PUBLISHED")).upper()
-    if post_state not in VALID_POST_STATES:
-        raise ConfigError(
-            f"hubspot.post_state must be one of {VALID_POST_STATES}, got {post_state!r}"
-        )
     hubspot = HubSpotSettings(
-        blog_id=str(hub_raw.get("blog_id") or ""),
-        blog_author_id=str(hub_raw.get("blog_author_id") or ""),
-        image_folder_path=str(hub_raw.get("image_folder_path") or "/news-import"),
-        post_state=post_state,
-        tag_exclude=tuple(str(t) for t in hub_raw.get("tag_exclude") or []),
-        custom_properties=bool(hub_raw.get("custom_properties", True)),
+        hubdb_table_name=str(hub_raw.get("hubdb_table_name") or "manufacturer_news"),
         access_token=os.environ.get("HUBSPOT_ACCESS_TOKEN") or None,
     )
 
@@ -112,17 +95,9 @@ def load_settings(
 
 
 def require_hubspot_config(settings: Settings) -> None:
-    """Raise an actionable ConfigError if anything needed for publishing is missing."""
-    problems: list[str] = []
+    """Raise an actionable ConfigError if anything needed for syncing is missing."""
     if not settings.hubspot.access_token:
-        problems.append(
-            "HUBSPOT_ACCESS_TOKEN is not set (put it in .env — see .env.example)"
+        raise ConfigError(
+            "HubSpot configuration incomplete:\n"
+            "  - HUBSPOT_ACCESS_TOKEN is not set (put it in .env — see .env.example)"
         )
-    if not settings.hubspot.blog_id:
-        problems.append("hubspot.blog_id is empty (run `manufacturer-scraper setup-hubspot`)")
-    if not settings.hubspot.blog_author_id:
-        problems.append(
-            "hubspot.blog_author_id is empty (run `manufacturer-scraper setup-hubspot`)"
-        )
-    if problems:
-        raise ConfigError("HubSpot configuration incomplete:\n  - " + "\n  - ".join(problems))

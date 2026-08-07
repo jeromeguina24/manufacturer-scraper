@@ -1,1 +1,1 @@
-"""HubSpot integration (REST client + blog post publisher)."""
+"""HubSpot integration (REST client + HubDB syncer)."""

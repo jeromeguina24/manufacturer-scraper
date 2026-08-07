@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "manufacturer-scraper"
 version = "0.1.0"
-description = "Scrapes printer-manufacturer newsrooms and publishes articles to HubSpot as CMS blog posts"
+description = "Scrapes printer-manufacturer newsrooms and syncs articles into a HubSpot HubDB table for a single filterable hub page"
 requires-python = ">=3.11"
 dependencies = [
     "requests>=2.32",

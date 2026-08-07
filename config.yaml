@@ -1,24 +1,9 @@
 # manufacturer-scraper configuration (no secrets here — the token lives in .env)
 
 hubspot:
-  # Blog (content group) GUID — find it via `manufacturer-scraper setup-hubspot`
-  # or in HubSpot under Marketing -> Website -> Blog (Settings). Required before pushing.
-  blog_id: "218880625745"   # "Manufacturer News"
-  # Blog author id — created/listed by `manufacturer-scraper setup-hubspot`. Required.
-  blog_author_id: "4654806094" # SumnerOne
-  # Where imported images are stored in the HubSpot file manager.
-  image_folder_path: "/news-import"
-  # "PUBLISHED" (backdated to the article date) or "DRAFT" for review before going live.
-  post_state: "PUBLISHED"
-  # Categories never turned into HubSpot tags.
-  tag_exclude: []
-  # Custom properties set on each post (source_url, manufacturer). HubSpot
-  # gates the blog-post property API behind generic CRM scopes that a
-  # content-only private app can't be given, so the scraper can't create or
-  # verify them. Leave this false unless you create both properties manually
-  # (Settings -> Properties -> Blog Post). The in-body linkback link to the
-  # original article works either way.
-  custom_properties: false
+  # HubDB table that holds the synced articles. Created automatically by
+  # `manufacturer-scraper setup-hubspot` (or adopted if it already exists).
+  hubdb_table_name: "manufacturer_news"
 
 scraping:
   # Browser-like UA is required by some sites (Fujifilm).
