@@ -14,16 +14,18 @@ from manufacturer_scraper.config import (
     Settings,
     load_settings,
     require_hubspot_config,
+    resolve_min_year,
 )
 from manufacturer_scraper.http import make_session
 from manufacturer_scraper.hubspot.client import HubSpotClient, HubSpotError
-from manufacturer_scraper.hubspot.publisher import HubSpotPublisher
+from manufacturer_scraper.hubspot.syncer import EXPECTED_COLUMNS, HubDbSyncer, SyncError
 from manufacturer_scraper.log import configure_logging
 from manufacturer_scraper.runner import (
     SourceResult,
     print_summary,
     retry_failed,
     run_source,
+    sync_articles,
 )
 from manufacturer_scraper.sources import SOURCES, get_source
 from manufacturer_scraper.store import Store
@@ -34,7 +36,7 @@ log = logging.getLogger(__name__)
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="manufacturer-scraper",
-        description="Scrape printer-manufacturer newsrooms and publish to HubSpot.",
+        description="Scrape printer-manufacturer newsrooms and sync them to HubSpot HubDB.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("-v", "--verbose", action="store_true", help="debug logging")
@@ -42,7 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub = parser.add_subparsers(dest="command", required=True)
 
-    run = sub.add_parser("run", help="scrape sources and publish new articles")
+    run = sub.add_parser("run", help="scrape sources and sync new articles to HubDB")
     run.add_argument(
         "--source",
         default="all",
@@ -56,9 +58,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.set_defaults(func=cmd_run)
 
     setup = sub.add_parser(
-        "setup-hubspot", help="inspect the portal: blogs, author, custom properties"
+        "setup-hubspot", help="create/verify the HubDB table used by the scraper"
     )
-    setup.add_argument("--author-name", default="Manufacturer News", help="author to create if none exists")
     setup.set_defaults(func=cmd_setup_hubspot)
 
     check = sub.add_parser("check-hubspot", help="report-only HubSpot health check")
@@ -84,6 +85,9 @@ def _selected_sources(name: str, settings: Settings) -> list[str]:
 def cmd_run(args: argparse.Namespace) -> int:
     settings = load_settings(args.config)
 
+    if args.dry_run and args.retry_failed:
+        raise ConfigError("--retry-failed cannot be combined with --dry-run")
+
     if not args.dry_run:
         require_hubspot_config(settings)
 
@@ -92,13 +96,20 @@ def cmd_run(args: argparse.Namespace) -> int:
         settings.scraping.user_agent, settings.scraping.timeout_s
     )
 
-    publisher = None
+    syncer = None
     if not args.dry_run:
         client = HubSpotClient(settings.hubspot.access_token or "")
-        publisher = HubSpotPublisher(client, store, settings)
+        syncer = HubDbSyncer(client, store, settings)
 
     selected = _selected_sources(args.source, settings)
     max_pages = args.max_pages or settings.scraping.max_pages
+    min_year = settings.scraping.min_year
+    if min_year is not None:
+        log.info(
+            "Only importing articles published in %s or later "
+            "(scraping.min_year — undated articles are always imported)",
+            min_year,
+        )
 
     results: list[SourceResult] = []
     if args.retry_failed:
@@ -106,7 +117,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             SOURCES[key].manufacturer: get_source(key, settings, session)
             for key in selected
         }
-        results.append(retry_failed(by_manufacturer, store, publisher, limit=args.limit))
+        results.append(retry_failed(by_manufacturer, store, syncer, limit=args.limit))
     else:
         for key in selected:
             source = get_source(key, settings, session)
@@ -115,10 +126,10 @@ def cmd_run(args: argparse.Namespace) -> int:
                 result = run_source(
                     source,
                     None if args.dry_run else store,
-                    publisher,
                     dry_run=args.dry_run,
                     max_pages=max_pages,
                     limit=args.limit,
+                    min_year=resolve_min_year(min_year, source.extra),
                 )
             except Exception as exc:  # noqa: BLE001 - one down source must not block the rest
                 log.error("SOURCE FAILED %s (%s): %s", source.manufacturer, key, exc)
@@ -137,6 +148,25 @@ def cmd_run(args: argparse.Namespace) -> int:
                 )
             results.append(result)
 
+        # One HubDB sync per run, after all sources. pending_articles() also
+        # picks up leftovers from a crashed earlier run (self-healing).
+        if not args.dry_run:
+            pending = store.pending_articles()
+            if pending:
+                sync_result = sync_articles(syncer, pending)
+                store.record_run(
+                    started_at=sync_result.started_at,
+                    finished_at=sync_result.finished_at,
+                    source=sync_result.source,
+                    dry_run=False,
+                    found=0,
+                    new=sync_result.new,
+                    pushed=sync_result.pushed,
+                    failed=sync_result.failed,
+                    skipped=0,
+                )
+                results.append(sync_result)
+
     print_summary(results)
     store.close()
     return 1 if any(r.failed or r.error for r in results) else 0
@@ -147,56 +177,43 @@ def cmd_setup_hubspot(args: argparse.Namespace) -> int:
     if not settings.hubspot.access_token:
         log.error("HUBSPOT_ACCESS_TOKEN is not set (see .env.example)")
         return 1
+
+    store = Store(settings.scraping.db_path)
     client = HubSpotClient(settings.hubspot.access_token)
+    syncer = HubDbSyncer(client, store, settings)
 
     try:
-        blogs = client.list_blogs()
+        table_id = syncer.ensure_table()
     except HubSpotError as exc:
-        log.error("Cannot reach HubSpot (auth/scopes?): %s", exc)
+        if exc.status == 403:
+            log.error(
+                "HubSpot refused the HubDB call (403). HubDB requires "
+                "Marketing Hub Professional or CMS Professional, and the "
+                "private app needs the 'hubdb' scope. Details: %s",
+                exc,
+            )
+        else:
+            log.error("Cannot reach HubSpot (auth/scopes?): %s", exc)
+        store.close()
+        return 1
+    except SyncError as exc:
+        log.error("%s", exc)
+        store.close()
         return 1
 
-    print("Blogs in this portal:")
-    if not blogs:
-        print("  (none — create a blog in HubSpot first: Marketing -> Website -> Blog)")
-    for blog in blogs:
-        marker = "  <-- configured" if str(blog.get("id")) == settings.hubspot.blog_id else ""
-        print(f"  id={blog.get('id')}  name={blog.get('name')!r}{marker}")
-
-    authors = client.list_blog_authors()
-    author_id = settings.hubspot.blog_author_id
-    print("\nBlog authors:")
-    for author in authors:
-        marker = "  <-- configured" if str(author.get("id")) == author_id else ""
-        print(f"  id={author.get('id')}  name={author.get('name')!r}{marker}")
-    if not authors:
-        try:
-            created = client.create_blog_author(args.author_name)
-            author_id = str(created.get("id", ""))
-            print(f"  Created author {args.author_name!r} id={author_id}")
-        except HubSpotError as exc:
-            print(f"  Could not create author: {exc}")
-
-    if settings.hubspot.custom_properties:
-        print("\nCustom properties on blog posts (source_url, manufacturer):")
-        if client.ensure_blog_post_properties():
-            print("  OK")
-        else:
-            print(
-                "  NOT available — linkback still works via the in-body link.\n"
-                "  (HubSpot gates the blog-post property API behind CRM scopes a\n"
-                "  content-only private app can't be granted. To use them anyway,\n"
-                "  create 'source_url' and 'manufacturer' manually under\n"
-                "  Settings -> Properties -> Blog Post; otherwise set\n"
-                "  hubspot.custom_properties: false in config.yaml.)"
-            )
-
+    print(f"HubDB table ready: name={settings.hubspot.hubdb_table_name!r} id={table_id}")
     print("\nPaste into config.yaml:")
     print("hubspot:")
-    if not settings.hubspot.blog_id:
-        print("  blog_id: \"<pick one from the list above>\"")
-    else:
-        print(f"  blog_id: \"{settings.hubspot.blog_id}\"")
-    print(f"  blog_author_id: \"{author_id or '<pick one from the list above>'}\"")
+    print(f"  hubdb_table_name: \"{settings.hubspot.hubdb_table_name}\"")
+    print(
+        "\nNext: create the hub page once — see docs/hubspot-setup.md and "
+        "docs/hub-page-template.html."
+    )
+    print(
+        "\nNote: if earlier experiments created blog posts in this portal, "
+        "delete them manually (Marketing -> Website -> Blog)."
+    )
+    store.close()
     return 0
 
 
@@ -218,41 +235,41 @@ def cmd_check_hubspot(args: argparse.Namespace) -> int:
 
     client = HubSpotClient(settings.hubspot.access_token)
     try:
-        blogs = client.list_blogs()
-        check("API reachable (content scope)", True)
+        client.list_hubdb_tables()
+        check("API reachable (hubdb scope)", True)
     except HubSpotError as exc:
-        check("API reachable (content scope)", False, str(exc))
+        detail = str(exc)
+        if exc.status == 403:
+            detail += (
+                " — HubDB requires Marketing Hub Professional/CMS Professional "
+                "and the 'hubdb' scope on the private app"
+            )
+        check("API reachable (hubdb scope)", False, detail)
         return 1
 
-    blog_ids = {str(b.get("id")) for b in blogs}
-    if settings.hubspot.blog_id:
-        check("blog_id configured", True, settings.hubspot.blog_id)
-        check("blog exists in portal", settings.hubspot.blog_id in blog_ids)
-    else:
-        check("blog_id configured", False, "run setup-hubspot and fill config.yaml")
+    try:
+        table = client.get_hubdb_table(settings.hubspot.hubdb_table_name)
+    except HubSpotError as exc:
+        check("table readable", False, str(exc))
+        return 1
+    if table is None:
+        check(
+            "HubDB table exists",
+            False,
+            f"{settings.hubspot.hubdb_table_name!r} not found — run setup-hubspot",
+        )
+        return 1
+    check("HubDB table exists", True, f"id={table.get('id')}")
+
+    existing = {column.get("name") for column in table.get("columns", [])}
+    missing = [name for name in EXPECTED_COLUMNS if name not in existing]
+    check("expected columns present", not missing, ", ".join(missing) if missing else "")
 
     try:
-        authors = client.list_blog_authors()
-        author_ids = {str(a.get("id")) for a in authors}
-        if settings.hubspot.blog_author_id:
-            check("blog_author_id configured", True, settings.hubspot.blog_author_id)
-            check("author exists in portal", settings.hubspot.blog_author_id in author_ids)
-        else:
-            check("blog_author_id configured", False, "run setup-hubspot")
+        rows = client.list_hubdb_rows(str(table.get("id")), limit=100)
+        check("rows readable", True, f"{len(rows)} row(s) live (capped sample)")
     except HubSpotError as exc:
-        check("blog authors readable", False, str(exc))
-
-    if settings.hubspot.custom_properties:
-        for prop in ("source_url", "manufacturer"):
-            found = None
-            for object_type in ("BLOG_POST", "blog_post"):
-                try:
-                    found = client.get_property(object_type, prop)
-                except HubSpotError:
-                    found = None
-                if found:
-                    break
-            check(f"custom property {prop}", bool(found), "" if found else "run setup-hubspot")
+        check("rows readable", False, str(exc))
 
     return 1 if problems else 0
 

@@ -1,0 +1,180 @@
+<!--
+  templateType: page
+  label: Manufacturer News Hub
+  isAvailableForNewContent: true
+-->
+{# ============================================================================
+   MANUFACTURER NEWS HUB — single-page news hub backed by HubDB.
+
+   Setup (once):  Design Manager -> File -> New file -> Custom template,
+   paste this whole file, save. Then Marketing -> Website -> Website Pages ->
+   Create page, pick the "Manufacturer News Hub" template, publish.
+
+   The scraper (manufacturer-scraper) fills the HubDB table; this page reads
+   it live. If you renamed the table in config.yaml, change TABLE below.
+
+   Embedding into an existing theme instead? Copy everything between
+   "HUB START" and "HUB END" into your page template.
+   ============================================================================ #}
+{% set TABLE = 'manufacturer_news' %}
+{% set PAGE_LIMIT = 150 %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Manufacturer News</title>
+</head>
+<body>
+<!-- ============================ HUB START ============================ -->
+{# ---- 1. Read filter values from the URL (?manufacturer=&type=&period=) ---- #}
+{% set f_mfr    = request.query_dict.manufacturer %}
+{% set f_type   = request.query_dict.type %}
+{% set f_period = request.query_dict.period %}
+
+{# ---- 2. Distinct filter options from the live data ---- #}
+{% set all_rows = hubdb_table_rows(TABLE, 'orderBy=-published_date&limit=1000') %}
+{% set mfr_options = [] %}
+{% set type_options = [] %}
+{% for r in all_rows %}
+  {% if r.manufacturer and r.manufacturer not in mfr_options %}
+    {% do mfr_options.append(r.manufacturer) %}
+  {% endif %}
+  {% if r.announcement_type and r.announcement_type not in type_options %}
+    {% do type_options.append(r.announcement_type) %}
+  {% endif %}
+{% endfor %}
+
+{# ---- 3. Build the filtered query (newest first, capped) ---- #}
+{% set query = 'orderBy=-published_date&limit=' ~ PAGE_LIMIT %}
+{% if f_mfr %}
+  {% set query = query ~ '&manufacturer__eq=' ~ (f_mfr|urlencode) %}
+{% endif %}
+{% if f_type %}
+  {% set query = query ~ '&announcement_type__eq=' ~ (f_type|urlencode) %}
+{% endif %}
+
+{# Time-period cutoff as a unix-ms timestamp (HubDB DATE columns are ms). #}
+{% set now_ms = local_dt|unixtimestamp %}
+{% set ms_today = (local_dt|strftime('%H')|int) * 3600000
+                + (local_dt|strftime('%M')|int) * 60000
+                + (local_dt|strftime('%S')|int) * 1000 %}
+{% set cutoff = 0 %}
+{% if f_period == '30d' %}
+  {% set cutoff = now_ms - 2592000000 %}
+{% elif f_period == '90d' %}
+  {% set cutoff = now_ms - 7776000000 %}
+{% elif f_period == 'year' %}
+  {% set doy = local_dt|strftime('%j')|int %}
+  {% set cutoff = now_ms - ms_today - (doy - 1) * 86400000 %}
+{% endif %}
+{% if cutoff > 0 %}
+  {% set query = query ~ '&published_date__gte=' ~ cutoff %}
+{% endif %}
+
+{% set rows = hubdb_table_rows(TABLE, query) %}
+
+<div class="mn-hub">
+  <h1 class="mn-heading">Manufacturer News</h1>
+
+  {# ---- 4. Filter bar (plain GET form back to this page) ---- #}
+  <form method="get" action="" class="mn-filters" aria-label="Filter announcements">
+    <label class="mn-field">
+      <span>Manufacturer</span>
+      <select name="manufacturer">
+        <option value="">All manufacturers</option>
+        {% for m in mfr_options %}
+          <option value="{{ m|escape }}"{% if m == f_mfr %} selected{% endif %}>{{ m|escape }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="mn-field">
+      <span>Type</span>
+      <select name="type">
+        <option value="">All types</option>
+        {% for t in type_options %}
+          <option value="{{ t|escape }}"{% if t == f_type %} selected{% endif %}>{{ t|escape }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="mn-field">
+      <span>Period</span>
+      <select name="period">
+        <option value="all"{% if not f_period or f_period == 'all' %} selected{% endif %}>All time</option>
+        <option value="30d"{% if f_period == '30d' %} selected{% endif %}>Last 30 days</option>
+        <option value="90d"{% if f_period == '90d' %} selected{% endif %}>Last 90 days</option>
+        <option value="year"{% if f_period == 'year' %} selected{% endif %}>This year</option>
+      </select>
+    </label>
+    <button type="submit" class="mn-apply">Apply filters</button>
+    {% if f_mfr or f_type or (f_period and f_period != 'all') %}
+      <a class="mn-clear" href="{{ request.path }}">Clear</a>
+    {% endif %}
+  </form>
+
+  {# ---- 5. Article cards ---- #}
+  {% if rows %}
+    <p class="mn-count">Showing {{ rows|length }} announcement{% if rows|length != 1 %}s{% endif %}</p>
+    <div class="mn-grid">
+      {% for row in rows %}
+        <article class="mn-card">
+          <div class="mn-card-body">
+            <p class="mn-meta">
+              <span class="mn-mfr">{{ row.manufacturer|escape }}</span>
+              {% if row.published_date %}
+                &middot; <time>{{ row.published_date|format_date('MMM d, yyyy') }}</time>
+              {% endif %}
+              {% if row.announcement_type %}
+                &middot; <span>{{ row.announcement_type|escape }}</span>
+              {% endif %}
+            </p>
+            <h3 class="mn-title">{{ row.title|escape }}</h3>
+            {% if row.summary %}
+              <p class="mn-summary">{{ row.summary|escape }}</p>
+            {% endif %}
+            <a class="mn-btn" href="{{ row.source_url|escape }}" target="_blank" rel="noopener">Read more</a>
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="mn-empty">No announcements match your filters.</p>
+  {% endif %}
+</div>
+
+<style>
+  .mn-hub { max-width: 1100px; margin: 0 auto; padding: 32px 16px;
+            font-family: inherit; color: #1f2937; }
+  .mn-heading { font-size: 28px; margin: 0 0 16px; }
+
+  .mn-filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;
+                padding: 16px; margin-bottom: 20px;
+                background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; }
+  .mn-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #475569; }
+  .mn-field select { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px;
+                     background: #fff; font-size: 14px; min-width: 170px; }
+  .mn-apply { padding: 9px 16px; border: none; border-radius: 6px; cursor: pointer;
+              background: #2563eb; color: #fff; font-size: 14px; }
+  .mn-apply:hover { background: #1d4ed8; }
+  .mn-clear { font-size: 14px; color: #2563eb; padding-bottom: 9px; }
+
+  .mn-count { font-size: 13px; color: #64748b; margin: 0 0 12px; }
+
+  .mn-grid { display: grid; gap: 20px;
+             grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+  .mn-card { display: flex; flex-direction: column; overflow: hidden;
+             background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; }
+  .mn-card-body { display: flex; flex-direction: column; gap: 8px; padding: 16px; flex: 1; }
+  .mn-meta { margin: 0; font-size: 12px; color: #64748b; }
+  .mn-mfr { font-weight: 600; color: #334155; }
+  .mn-title { margin: 0; font-size: 16px; line-height: 1.35; }
+  .mn-summary { margin: 0; font-size: 14px; color: #475569; flex: 1; }
+  .mn-btn { align-self: flex-start; margin-top: 4px; padding: 8px 14px;
+            background: #2563eb; color: #fff !important; text-decoration: none;
+            border-radius: 6px; font-size: 14px; }
+  .mn-btn:hover { background: #1d4ed8; }
+  .mn-empty { padding: 48px 0; text-align: center; color: #64748b; }
+</style>
+<!-- ============================= HUB END ============================= -->
+</body>
+</html>
