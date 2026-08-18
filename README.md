@@ -12,9 +12,26 @@ Currently supported manufacturers:
 | Fujifilm | [fujifilm.com/fb/en/news](https://www.fujifilm.com/fb/en/news) | HTML + article-page enrichment |
 | Kyocera | [europe.kyocera.com/news](https://europe.kyocera.com/news/)* | HTML, filtered to printer categories |
 | Konica Minolta | [konicaminolta.com newsroom](https://www.konicaminolta.com/global-en/newsroom/release/index.html) | HTML + article-page enrichment |
+| FP | [fp-usa.com/newsroom](https://www.fp-usa.com/newsroom) | Single-page HTML archive |
+| HP | [hp.com newsroom](https://www.hp.com/us-en/newsroom.html)† | JSON archive embedded in the page |
+| Duplo | [duplousa.com/newsroom](https://www.duplousa.com/newsroom/) | WordPress REST API |
+| Predictive InSight | [in-the-press page](https://predictive-insight.com/pages/in-the-press/)‡ | Static HTML list (month/year dates) |
+| PaperCut | [papercut.com/blog](https://www.papercut.com/blog/) | JSON archive embedded in the page |
+| iJetColor | [ijetcolor.com news & events](https://www.ijetcolor.com/news-events-1)§ | HTML link collection |
+| Laserfiche | [laserfiche.com press center](https://www.laserfiche.com/resources/press-center/) | HTML + article-page enrichment |
+| DocuWare | [start.docuware.com blog](https://start.docuware.com/blog/product-news) | Paginated HTML listing |
 
 \* The client's original URL (`/products/printing-devices/news/index.html`)
 now redirects to the homepage; this is the current newsroom location.
+
+† Covers all of HP (PCs, 3D printing, corporate, …); narrow it with
+`sources.hp.include_categories` if you only want print-related items.
+
+‡ Small archive that entirely predates the `min_year` cutoff — its config
+block disables the filter (`min_year: null`).
+
+§ The page carries no published dates, so its items are imported regardless
+of `min_year`.
 
 Each article is synced with: **title, manufacturer, announcement date,
 announcement type (category), short summary, and the original article URL** —
@@ -64,10 +81,10 @@ python -m manufacturer_scraper run --retry-failed
 Every run prints a summary table:
 
 ```
-source                  found   new  seen  pushed  failed    time
------------------------------------------------------------------
-canon                     100   100     0       0       0    6.2s
-hubdb-sync                  0   100     0     100       0    2.1s
+source                  found   new  seen   old  pushed  failed    time
+-----------------------------------------------------------------------
+canon                     132    12     0   120       0       0    6.2s
+hubdb-sync                  0    12     0     0      12       0    2.1s
 ...
 ```
 

@@ -1,7 +1,8 @@
 # Test fixtures
 
-Real responses captured from the live manufacturer sites on **2026-08-07**,
-used by the parser tests:
+Real responses captured from the live manufacturer sites on **2026-08-07**
+(Canon through Konica) and **2026-08-15** (FP through DocuWare), used by the
+parser tests:
 
 | File | Captured from |
 |---|---|
