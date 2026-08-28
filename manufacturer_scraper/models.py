@@ -121,3 +121,70 @@ def truncate(text: str, max_len: int = 300) -> str:
     if len(text) <= max_len:
         return text
     return text[: max_len - 1].rsplit(" ", 1)[0].rstrip(",.;:") + "…"
+
+
+# ---------------------------------------------------------------------------
+# print-topic relevance
+# ---------------------------------------------------------------------------
+
+# Terms that mark an article as print / document-imaging related. Each term
+# is matched from a word boundary onward, so "print" also catches printer /
+# printers / printing / printed, "ink" catches inkjet, etc. — but never the
+# tail of a longer word ("link", "blueprint", "email"). Multi-word phrases are
+# matched as phrases. This list is intentionally broad enough to keep any
+# plausibly print-related item; it exists to drop clearly-unrelated news
+# (laptops, financial results, healthcare, gaming) from diversified vendors.
+PRINT_TOPIC_TERMS: tuple[str, ...] = (
+    # core printing
+    "print",
+    "copier",
+    "photocop",
+    "toner",
+    "ink",
+    "multifunction",
+    "multi-function",
+    "mfp",
+    "all-in-one",
+    "digital press",
+    "production press",
+    "wide format",
+    "wide-format",
+    "large format",
+    "large-format",
+    "reprograph",
+    "managed print",
+    "mps",
+    "print shop",
+    "print provider",
+    "finishing",
+    "bindery",
+    "image",
+    "scanner",
+    "scanning",
+    "document",
+    # mail / franking (FP)
+    "mail",
+    "franking",
+    "postage",
+    # well-known print product lines of the diversified vendors
+    "laserjet",
+    "officejet",
+    "designjet",
+    "pagewide",
+    "indigo",
+    "bizhub",
+    "accurio",
+    "taskalfa",
+    "apeos",
+)
+
+_PRINT_TOPIC_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(term) for term in PRINT_TOPIC_TERMS) + r")",
+    re.IGNORECASE,
+)
+
+
+def is_print_related(title: str, categories: tuple[str, ...] = (), summary: str | None = None) -> bool:
+    """True when the article looks print / document-imaging related."""
+    haystack = " ".join((title or "", " ".join(categories or ()), summary or ""))
+    return _PRINT_TOPIC_RE.search(haystack) is not None

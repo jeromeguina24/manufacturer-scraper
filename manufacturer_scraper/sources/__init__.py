@@ -8,15 +8,31 @@ import requests
 from manufacturer_scraper.config import Settings
 from manufacturer_scraper.sources.base import BaseSource
 from manufacturer_scraper.sources.canon import CanonSource
+from manufacturer_scraper.sources.docuware import DocuWareSource
+from manufacturer_scraper.sources.duplo import DuploSource
+from manufacturer_scraper.sources.fp import FPSource
 from manufacturer_scraper.sources.fujifilm import FujifilmSource
+from manufacturer_scraper.sources.hp import HPSource
+from manufacturer_scraper.sources.ijetcolor import IJetColorSource
 from manufacturer_scraper.sources.konica import KonicaSource
 from manufacturer_scraper.sources.kyocera import KyoceraSource
+from manufacturer_scraper.sources.laserfiche import LaserficheSource
+from manufacturer_scraper.sources.papercut import PaperCutSource
+from manufacturer_scraper.sources.predictive_insight import PredictiveInsightSource
 
 ALL_SOURCES: tuple[type[BaseSource], ...] = (
     CanonSource,
     FujifilmSource,
     KyoceraSource,
     KonicaSource,
+    FPSource,
+    HPSource,
+    DuploSource,
+    PredictiveInsightSource,
+    PaperCutSource,
+    IJetColorSource,
+    LaserficheSource,
+    DocuWareSource,
 )
 
 SOURCES: dict[str, type[BaseSource]] = {cls.name: cls for cls in ALL_SOURCES}
