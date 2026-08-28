@@ -1,24 +1,9 @@
 # manufacturer-scraper configuration (no secrets here — the token lives in .env)
 
 hubspot:
-  # Blog (content group) GUID — find it via `manufacturer-scraper setup-hubspot`
-  # or in HubSpot under Marketing -> Website -> Blog (Settings). Required before pushing.
-  blog_id: "218880625745"   # "Manufacturer News"
-  # Blog author id — created/listed by `manufacturer-scraper setup-hubspot`. Required.
-  blog_author_id: "4654806094" # SumnerOne
-  # Where imported images are stored in the HubSpot file manager.
-  image_folder_path: "/news-import"
-  # "PUBLISHED" (backdated to the article date) or "DRAFT" for review before going live.
-  post_state: "PUBLISHED"
-  # Categories never turned into HubSpot tags.
-  tag_exclude: []
-  # Custom properties set on each post (source_url, manufacturer). HubSpot
-  # gates the blog-post property API behind generic CRM scopes that a
-  # content-only private app can't be given, so the scraper can't create or
-  # verify them. Leave this false unless you create both properties manually
-  # (Settings -> Properties -> Blog Post). The in-body linkback link to the
-  # original article works either way.
-  custom_properties: false
+  # HubDB table that holds the synced articles. Created automatically by
+  # `manufacturer-scraper setup-hubspot` (or adopted if it already exists).
+  hubdb_table_name: "manufacturer_news"
 
 scraping:
   # Browser-like UA is required by some sites (Fujifilm).
@@ -28,6 +13,18 @@ scraping:
   retries: 3
   max_pages: 3              # default per-run page limit per source; raise for backfills
   db_path: "scraper_state.db"
+  # Only import articles published in this year or later, so the first run of
+  # a new source does not backfill its entire archive. Use a fixed year
+  # (e.g. 2024) to reach further back, or remove this line to import
+  # everything. Articles without a published date are always imported.
+  min_year: current
+  # Keep only print / document-imaging related articles (keyword match on
+  # title + categories + summary). On by default so the big diversified
+  # vendors (HP, Konica, Canon, Fujifilm) don't flood the feed with laptops,
+  # financial results and healthcare news. Specialist print/document sources
+  # switch it back off below, since everything they publish is already
+  # on-topic and their product names rarely contain the word "print".
+  print_topics_only: true
 
 sources:
   fujifilm:
@@ -43,5 +40,45 @@ sources:
       - "Printing Devices"
     # Heuristic first-content-image fetch from article pages; fragile, off by default.
     fetch_detail_images: false
+    # Already narrowed to printer categories above; don't keyword-filter too.
+    print_topics_only: false
   konica:
     enabled: true
+  fp:
+    enabled: true
+    # Specialist franking/mail & print vendor — every release is on-topic.
+    print_topics_only: false
+  hp:
+    enabled: true
+    # The HP newsroom covers everything (PCs, 3D printing, corporate, ...).
+    # To import only certain categories, list them here (e.g. ["Print", "Printing"]);
+    # empty/omitted imports all.
+    # include_categories: []
+  duplo:
+    enabled: true
+    per_page: 100
+    # Print-finishing vendor; product names ("Spot UV Coater") have no "print".
+    print_topics_only: false
+  predictive_insight:
+    enabled: true
+    # Its in-the-press archive is tiny and entirely predates the global
+    # min_year cutoff, so disable the filter for this source only.
+    min_year: null
+    # Managed-print analytics vendor — every item is on-topic.
+    print_topics_only: false
+  papercut:
+    enabled: true
+    # Print-management software; titles like "PaperCut Hive" lack print keywords.
+    print_topics_only: false
+  ijetcolor:
+    enabled: true
+    # Production inkjet vendor; titles rarely contain the word "print".
+    print_topics_only: false
+  laserfiche:
+    enabled: true
+    # Document/content management — adjacent to print, kept in full.
+    print_topics_only: false
+  docuware:
+    enabled: true
+    # Document management — adjacent to print, kept in full.
+    print_topics_only: false

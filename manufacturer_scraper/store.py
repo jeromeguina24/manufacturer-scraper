@@ -1,4 +1,4 @@
-"""SQLite-backed state store: dedupe, publish status, HubSpot caches, run audit."""
+"""SQLite-backed state store: dedupe, sync status, HubDB ids, run audit."""
 
 from __future__ import annotations
 
@@ -25,15 +25,9 @@ CREATE TABLE IF NOT EXISTS articles (
     first_seen_at   TEXT NOT NULL,
     updated_at      TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS image_cache (
-    url               TEXT PRIMARY KEY,
-    hubspot_file_id   TEXT,
-    hubspot_file_path TEXT,
-    imported_at       TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS tag_cache (
-    name           TEXT PRIMARY KEY COLLATE NOCASE,
-    hubspot_tag_id TEXT NOT NULL
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS runs (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,7 +56,14 @@ class Store:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(SCHEMA)
+        self._migrate()
         self._conn.commit()
+
+    def _migrate(self) -> None:
+        """Lightweight schema migrations for databases created by older versions."""
+        cols = {row["name"] for row in self._conn.execute("PRAGMA table_info(articles)")}
+        if "hubdb_row_id" not in cols:
+            self._conn.execute("ALTER TABLE articles ADD COLUMN hubdb_row_id TEXT")
 
     def close(self) -> None:
         self._conn.close()
@@ -103,15 +104,14 @@ class Store:
         )
         self._conn.commit()
 
-    def mark_pushed(self, url: str, post_id: str, slug: str) -> None:
+    def mark_pushed(self, url: str, row_id: str) -> None:
         self._conn.execute(
             """
             UPDATE articles
-               SET status = 'pushed', hubspot_post_id = ?, hubspot_slug = ?,
-                   error = NULL, updated_at = ?
+               SET status = 'pushed', hubdb_row_id = ?, error = NULL, updated_at = ?
              WHERE url = ?
             """,
-            (post_id, slug, _now_iso(), url),
+            (row_id, _now_iso(), url),
         )
         self._conn.commit()
 
@@ -127,6 +127,37 @@ class Store:
             "SELECT * FROM articles WHERE status = 'failed' ORDER BY first_seen_at"
         ).fetchall()
         return [self._row_to_article(row) for row in rows]
+
+    def pending_articles(self) -> list[Article]:
+        """Articles inserted this (or a crashed earlier) run, not yet synced."""
+        rows = self._conn.execute(
+            "SELECT * FROM articles WHERE status = 'new' ORDER BY first_seen_at"
+        ).fetchall()
+        return [self._row_to_article(row) for row in rows]
+
+    # -- HubDB row ids ---------------------------------------------------------
+
+    def row_id(self, url: str) -> str | None:
+        row = self._conn.execute(
+            "SELECT hubdb_row_id FROM articles WHERE url = ?", (url,)
+        ).fetchone()
+        if row is None or not row["hubdb_row_id"]:
+            return None
+        return row["hubdb_row_id"]
+
+    def set_row_id(self, url: str, row_id: str) -> None:
+        self._conn.execute(
+            "UPDATE articles SET hubdb_row_id = ?, updated_at = ? WHERE url = ?",
+            (row_id, _now_iso(), url),
+        )
+        self._conn.commit()
+
+    def clear_unpushed_row_ids(self) -> None:
+        """Drop cached row ids that referenced a since-deleted HubDB table."""
+        self._conn.execute(
+            "UPDATE articles SET hubdb_row_id = NULL WHERE status IN ('new', 'failed')"
+        )
+        self._conn.commit()
 
     def update_enrichment(self, url: str, summary: str | None, image_url: str | None) -> None:
         self._conn.execute(
@@ -154,49 +185,20 @@ class Store:
             image_url=row["image_url"],
         )
 
-    # -- caches ----------------------------------------------------------------
+    # -- meta --------------------------------------------------------------------
 
-    def cached_image(self, url: str) -> tuple[str, str] | None:
-        row = self._conn.execute(
-            "SELECT hubspot_file_id, hubspot_file_path FROM image_cache WHERE url = ?",
-            (url,),
-        ).fetchone()
-        if row is None:
-            return None
-        return (row["hubspot_file_id"] or "", row["hubspot_file_path"] or "")
+    def meta_get(self, key: str) -> str | None:
+        row = self._conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else None
 
-    def cache_image(self, url: str, file_id: str, path: str) -> None:
+    def meta_set(self, key: str, value: str) -> None:
         self._conn.execute(
             """
-            INSERT INTO image_cache (url, hubspot_file_id, hubspot_file_path, imported_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(url) DO UPDATE SET
-                hubspot_file_id = excluded.hubspot_file_id,
-                hubspot_file_path = excluded.hubspot_file_path,
-                imported_at = excluded.imported_at
+            INSERT INTO meta (key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
             """,
-            (url, file_id, path, _now_iso()),
+            (key, value),
         )
-        self._conn.commit()
-
-    def cached_tag(self, name: str) -> str | None:
-        row = self._conn.execute(
-            "SELECT hubspot_tag_id FROM tag_cache WHERE name = ?", (name,)
-        ).fetchone()
-        return row["hubspot_tag_id"] if row else None
-
-    def cache_tag(self, name: str, tag_id: str) -> None:
-        self._conn.execute(
-            """
-            INSERT INTO tag_cache (name, hubspot_tag_id) VALUES (?, ?)
-            ON CONFLICT(name) DO UPDATE SET hubspot_tag_id = excluded.hubspot_tag_id
-            """,
-            (name, tag_id),
-        )
-        self._conn.commit()
-
-    def clear_tag_cache(self) -> None:
-        self._conn.execute("DELETE FROM tag_cache")
         self._conn.commit()
 
     # -- audit -------------------------------------------------------------------
