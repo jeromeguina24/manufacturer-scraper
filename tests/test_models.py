@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 from manufacturer_scraper.models import (
     absolute_url,
+    is_print_related,
     normalize_url,
     parse_date,
     parse_iso_utc,
@@ -81,3 +82,39 @@ def test_truncate_on_word_boundary():
     out = truncate(text.strip(), 60)
     assert len(out) <= 60
     assert out.endswith("…")
+
+
+def test_is_print_related_matches_print_terms():
+    assert is_print_related("Canon launches new inkjet printer")
+    assert is_print_related("Managed Print Services agreement signed")
+    assert is_print_related("New bizhub multifunction system")
+    assert is_print_related("Wide-format signage solutions expand")
+
+
+def test_is_print_related_prefix_matching():
+    # Terms match from a word boundary onward: "print" catches printer/
+    # printing/printers, "ink" catches inkjet, "copier" catches copiers.
+    assert is_print_related("Printing industry award won")
+    assert is_print_related("Inkjet technology breakthrough")
+    assert is_print_related("New toner cartridge recycling program")
+    assert is_print_related("Copiers for the office of tomorrow")
+
+
+def test_is_print_related_rejects_unrelated_news():
+    assert not is_print_related("HP unveils new EliteBook laptop")
+    assert not is_print_related("1st Quarter Financial Results")
+    assert not is_print_related("U.S. Healthcare Sales Company established")
+    assert not is_print_related("Gaming headset lineup announced")
+
+
+def test_is_print_related_ignores_word_tails():
+    # No match inside longer words: "blueprint", "fingerprint", "email".
+    assert not is_print_related("Company unveils new blueprint for growth")
+    assert not is_print_related("Fingerprint sensor technology improves")
+    assert not is_print_related("Email campaign tips for marketers")
+
+
+def test_is_print_related_checks_categories_and_summary():
+    assert is_print_related("New product announced", categories=("Printers",))
+    assert is_print_related("Quarterly update", summary="Toner sales grew five percent")
+    assert not is_print_related("New product announced", categories=("Corporate",))
