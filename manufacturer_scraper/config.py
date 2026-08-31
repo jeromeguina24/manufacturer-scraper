@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
 from dotenv import load_dotenv
-
-VALID_POST_STATES = ("PUBLISHED", "DRAFT")
 
 
 class ConfigError(RuntimeError):
@@ -18,12 +17,7 @@ class ConfigError(RuntimeError):
 
 @dataclass(frozen=True)
 class HubSpotSettings:
-    blog_id: str = ""
-    blog_author_id: str = ""
-    image_folder_path: str = "/news-import"
-    post_state: str = "PUBLISHED"
-    tag_exclude: tuple[str, ...] = ()
-    custom_properties: bool = True
+    hubdb_table_name: str = "manufacturer_news"
     access_token: str | None = None
 
 
@@ -38,6 +32,12 @@ class ScrapingSettings:
     retries: int = 3
     max_pages: int = 3
     db_path: str = "scraper_state.db"
+    # Only articles published in this year or later are imported (None = all).
+    min_year: int | None = None
+    # Keep only print / document-imaging related articles (keyword match on
+    # title + categories + summary). Off by default; enable for newsrooms of
+    # diversified vendors that also publish non-print news.
+    print_topics_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -59,6 +59,52 @@ def _source_settings(raw: dict) -> SourceSettings:
     return SourceSettings(enabled=enabled, extra=data)
 
 
+def _parse_min_year(raw_value) -> int | None:
+    """`scraping.min_year`: a year, the string 'current', or absent."""
+    if raw_value is None or str(raw_value).strip() == "":
+        return None
+    if isinstance(raw_value, bool):
+        raise ConfigError(f"scraping.min_year must be a year or 'current', got {raw_value!r}")
+    if isinstance(raw_value, int):
+        return raw_value
+    text = str(raw_value).strip().lower()
+    if text == "current":
+        return datetime.now(UTC).year
+    if text.isdigit():
+        return int(text)
+    raise ConfigError(f"scraping.min_year must be a year or 'current', got {raw_value!r}")
+
+
+_MISSING = object()
+
+
+def resolve_min_year(global_min_year: int | None, extra: dict) -> int | None:
+    """Effective min_year for one source.
+
+    A per-source `min_year` (in its config block) overrides the global
+    `scraping.min_year`; `min_year: null` disables the filter for that source
+    (useful for small archives that predate the cutoff).
+    """
+    raw = extra.get("min_year", _MISSING)
+    if raw is _MISSING:
+        return global_min_year
+    return _parse_min_year(raw)
+
+
+def resolve_print_topics_only(global_flag: bool, extra: dict) -> bool:
+    """Effective print-topics filter for one source.
+
+    A per-source `print_topics_only` (in its config block) overrides the
+    global `scraping.print_topics_only`. Specialist print/document sources
+    keep this off so their (print-related) niche content isn't dropped by
+    the keyword match.
+    """
+    raw = extra.get("print_topics_only", _MISSING)
+    if raw is _MISSING:
+        return global_flag
+    return bool(raw)
+
+
 def load_settings(
     config_path: str | Path = "config.yaml",
     env_file: str | Path | None = ".env",
@@ -78,18 +124,8 @@ def load_settings(
             load_dotenv(dotenv_path=env_file, override=False)
 
     hub_raw = raw.get("hubspot") or {}
-    post_state = str(hub_raw.get("post_state", "PUBLISHED")).upper()
-    if post_state not in VALID_POST_STATES:
-        raise ConfigError(
-            f"hubspot.post_state must be one of {VALID_POST_STATES}, got {post_state!r}"
-        )
     hubspot = HubSpotSettings(
-        blog_id=str(hub_raw.get("blog_id") or ""),
-        blog_author_id=str(hub_raw.get("blog_author_id") or ""),
-        image_folder_path=str(hub_raw.get("image_folder_path") or "/news-import"),
-        post_state=post_state,
-        tag_exclude=tuple(str(t) for t in hub_raw.get("tag_exclude") or []),
-        custom_properties=bool(hub_raw.get("custom_properties", True)),
+        hubdb_table_name=str(hub_raw.get("hubdb_table_name") or "manufacturer_news"),
         access_token=os.environ.get("HUBSPOT_ACCESS_TOKEN") or None,
     )
 
@@ -101,6 +137,8 @@ def load_settings(
         retries=int(scr_raw.get("retries", 3)),
         max_pages=int(scr_raw.get("max_pages", 3)),
         db_path=str(scr_raw.get("db_path") or "scraper_state.db"),
+        min_year=_parse_min_year(scr_raw.get("min_year")),
+        print_topics_only=bool(scr_raw.get("print_topics_only", False)),
     )
 
     sources = {
@@ -112,17 +150,9 @@ def load_settings(
 
 
 def require_hubspot_config(settings: Settings) -> None:
-    """Raise an actionable ConfigError if anything needed for publishing is missing."""
-    problems: list[str] = []
+    """Raise an actionable ConfigError if anything needed for syncing is missing."""
     if not settings.hubspot.access_token:
-        problems.append(
-            "HUBSPOT_ACCESS_TOKEN is not set (put it in .env — see .env.example)"
+        raise ConfigError(
+            "HubSpot configuration incomplete:\n"
+            "  - HUBSPOT_ACCESS_TOKEN is not set (put it in .env — see .env.example)"
         )
-    if not settings.hubspot.blog_id:
-        problems.append("hubspot.blog_id is empty (run `manufacturer-scraper setup-hubspot`)")
-    if not settings.hubspot.blog_author_id:
-        problems.append(
-            "hubspot.blog_author_id is empty (run `manufacturer-scraper setup-hubspot`)"
-        )
-    if problems:
-        raise ConfigError("HubSpot configuration incomplete:\n  - " + "\n  - ".join(problems))
